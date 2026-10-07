@@ -1,9 +1,10 @@
-import { speedAt } from './motion.js';
+import { recordedSpeedAt } from './motion.js';
 import { xy, matchRoute, riverNormal, latLon, round } from './geometry.js';
 
 export function predict(dataset, input) {
   const match = matchRoute(dataset.nodes, xy(input.latitude, input.longitude));
   if (!match || match.offset > 100) return null;
+  const speedKmh = recordedSpeedAt(dataset.nodes, match);
   const currentTunnel = dataset.tunnels.find(t => match.s >= t.start && match.s < t.end);
   const upcoming = dataset.events.filter(e => (e.departureS ?? e.s) >= match.s - 0.01).map(e => ({
     id: e.id, featureId: e.featureId, type: e.type, name: e.name, target: e.target,
@@ -19,8 +20,8 @@ export function predict(dataset, input) {
     position: {
       ...latLon(match.point), distanceAlongRouteMeters: round(match.s),
       matchOffsetMeters: round(match.offset), referenceTimeSeconds: round(match.t),
-      speedMetersPerSecond: round(speedAt(dataset.nodes, match.i)),
-      speedKmh: round(speedAt(dataset.nodes, match.i) * 3.6), speedSource: 'recorded_gps',
+      speedMetersPerSecond: speedKmh === null ? null : round(speedKmh / 3.6),
+      speedKmh: speedKmh === null ? null : round(speedKmh), speedSource: 'gps_record_speed',
       inTunnel: Boolean(currentTunnel), tunnelId: currentTunnel?.id ?? null,
     },
     upcoming,

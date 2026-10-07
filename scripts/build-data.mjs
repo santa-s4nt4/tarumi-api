@@ -22,7 +22,7 @@ for (const direction of ['front', 'back']) {
     if (![r.lat, r.lon, r.t].every(Number.isFinite) || Math.abs(r.lat) > 90 || Math.abs(r.lon) > 180 || (i && r.t <= all[i - 1].t)) throw new Error('Invalid GPS record');
     const p = xy(r.lat, r.lon);
     if (i) s += distance(xy(all[i - 1].lat, all[i - 1].lon), p);
-    return [...p, s, r.t];
+    return [...p, s, r.t, Number.isFinite(r.speed) && r.speed >= 0 ? r.speed : null];
   });
   const excluded = [], events = [], intervals = [];
   function project(lat, lon, id) {

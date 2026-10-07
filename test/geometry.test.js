@@ -51,3 +51,10 @@ test('station target is beginning of dwell, held at zero until departure', () =>
  assert.equal(result.next.station.etaSeconds,0);
  assert.equal(result.next.station.arrived,true);
 });
+
+import { recordedSpeedAt } from '../src/motion.js';
+test('returns the supplied GPS speed, interpolated at the matched point', () => {
+ const nodes=[[0,0,0,0,20],[0,100,100,10,40]];
+ assert.equal(recordedSpeedAt(nodes,matchRoute(nodes,[0,25])),25);
+ assert.equal(recordedSpeedAt([[0,0,0,0,null],[0,100,100,10,null]],matchRoute(nodes,[0,25])),null);
+});

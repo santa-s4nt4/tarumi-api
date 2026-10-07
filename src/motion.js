@@ -1,3 +1,11 @@
+// The supplied GPS records contain speed in km/h (confirmed against coordinate displacement).
+// The route projection lies between two records, so interpolate their stored readings.
+export function recordedSpeedAt(nodes, match) {
+  const a = nodes[match.i][4], b = nodes[match.i + 1][4];
+  if (Number.isFinite(a) && Number.isFinite(b)) return a + (b - a) * match.u;
+  return Number.isFinite(a) ? a : Number.isFinite(b) ? b : null;
+}
+
 import { distance, xy } from './geometry.js';
 
 // Centred displacement over up to four seconds, independent of source speed units.
