@@ -1,3 +1,4 @@
+import { stationStop } from '../src/motion.js';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { xy, distance, matchRoute, lineIntersection, sub, lerp, latLon } from '../src/geometry.js';
@@ -33,7 +34,10 @@ for (const direction of ['front', 'back']) {
   for (const station of stations.stations) {
     const id = `station-${station.order}`;
     const m = project(station.lat, station.lon, id);
-    if (m) events.push({ id, type: 'station', name: station.name, target: 'station_point', s: m.s, t: m.t, location: { latitude: station.lat, longitude: station.lon }, matchOffsetMeters: m.offset });
+    if (m) {
+      const stop = stationStop(nodes, station, m);
+      events.push({ id, type: 'station', name: station.name, target: stop ? 'arrival' : 'station_point', s: m.s, t: m.t, ...stop, location: { latitude: station.lat, longitude: station.lon }, matchOffsetMeters: m.offset });
+    }
   }
   for (const tunnel of tunnels) {
     const id = `tunnel-${tunnel.osm_way_id}`;

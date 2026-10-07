@@ -1,20 +1,26 @@
+import { speedAt } from './motion.js';
 import { xy, matchRoute, riverNormal, latLon, round } from './geometry.js';
 
 export function predict(dataset, input) {
   const match = matchRoute(dataset.nodes, xy(input.latitude, input.longitude));
   if (!match || match.offset > 100) return null;
   const currentTunnel = dataset.tunnels.find(t => match.s >= t.start && match.s < t.end);
-  const upcoming = dataset.events.filter(e => e.s >= match.s - 0.01).map(e => ({
+  const upcoming = dataset.events.filter(e => (e.departureS ?? e.s) >= match.s - 0.01).map(e => ({
     id: e.id, featureId: e.featureId, type: e.type, name: e.name, target: e.target,
     distanceMeters: round(Math.max(0, e.s - match.s)),
-    etaSeconds: round(Math.max(0, e.t - match.t)),
+    etaSeconds: e.target === 'arrival' && match.s >= e.s - 0.01 ? 0 : round(Math.max(0, e.t - match.t)),
     location: e.location,
+    departureEtaSeconds: e.departureT === undefined ? null : round(Math.max(0, e.departureT - match.t)),
+    departureDistanceMeters: e.departureS === undefined ? null : round(Math.max(0, e.departureS - match.s)),
+    arrived: e.target === 'arrival' && match.s >= e.s - 0.01,
   }));
   return {
     demo: false, source: 'd1', direction: dataset.direction,
     position: {
       ...latLon(match.point), distanceAlongRouteMeters: round(match.s),
       matchOffsetMeters: round(match.offset), referenceTimeSeconds: round(match.t),
+      speedMetersPerSecond: round(speedAt(dataset.nodes, match.i)),
+      speedKmh: round(speedAt(dataset.nodes, match.i) * 3.6), speedSource: 'recorded_gps',
       inTunnel: Boolean(currentTunnel), tunnelId: currentTunnel?.id ?? null,
     },
     upcoming,
@@ -23,7 +29,7 @@ export function predict(dataset, input) {
     prediction: {
       method: 'recorded_trip_time_difference', estimated: true,
       basedAt: input.recordedAt ?? null, generatedAt: new Date().toISOString(),
-      limitations: ['GPS-derived geometry', 'Station times refer to station coordinates, not confirmed arrivals', 'Single GPS cannot distinguish elapsed dwell time', 'River lateral distance has no arrival time'],
+      limitations: ['GPS-derived geometry', 'Station arrival is estimated from GPS stops; station_point is fallback', 'Single GPS cannot distinguish elapsed dwell time', 'River lateral distance has no arrival time'],
     },
     coverage: dataset.coverage, excludedFeatures: dataset.excluded, attribution: dataset.attribution,
   };

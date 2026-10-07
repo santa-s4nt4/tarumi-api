@@ -37,3 +37,17 @@ test('prediction filters passed events, includes tunnel exit, rejects off-route 
  assert.equal(result.next.station,null);
  assert.equal(predict(dataset,{latitude:36,longitude:136}),null);
 });
+
+import { stationStop, speedAt } from '../src/motion.js';
+test('station target is beginning of dwell, held at zero until departure', () => {
+ const nodes=[];
+ for(let t=0;t<=40;t++) { const y=t<10?t*10:t<=30?100:100+(t-30)*10;nodes.push([0,y,y,t]); }
+ const station={lat:35.57+100/111195.0802335329,lon:136.64};
+ const stop=stationStop(nodes,station,{s:100});
+ assert.ok(stop.t<15);assert.ok(stop.departureT>25);
+ assert.equal(speedAt(nodes,20),0);assert.equal(speedAt(nodes,5),10);
+ const d={nodes,events:[{id:'s',type:'station',target:'arrival',...stop}],tunnels:[],river:[]};
+ const result=predict(d,{latitude:station.lat,longitude:station.lon});
+ assert.equal(result.next.station.etaSeconds,0);
+ assert.equal(result.next.station.arrived,true);
+});
