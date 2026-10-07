@@ -1,3 +1,4 @@
+import { loadDataset, predict } from './predict.js';
 const headers = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -17,7 +18,7 @@ export default {
 
     const path = new URL(request.url).pathname;
     if (path === '/' && request.method === 'GET') {
-      return json({ name: 'tarumi-api', demo: true, endpoints: ['GET /api/demo', 'POST /api/position'] });
+      return json({ name: 'tarumi-api', demo: false, endpoints: ['GET /api/demo', 'POST /api/position'] });
     }
     if (!['/api/demo', '/api/position'].includes(path)) {
       return json({ error: 'not_found' }, 404);
@@ -35,12 +36,30 @@ export default {
         const body = await request.json();
         const { latitude, longitude } = body ?? {};
         if (typeof latitude !== 'number' || !Number.isFinite(latitude) || Math.abs(latitude) > 90 ||
-            typeof longitude !== 'number' || !Number.isFinite(longitude) || Math.abs(longitude) > 180) {
+          typeof longitude !== 'number' || !Number.isFinite(longitude) || Math.abs(longitude) > 180) {
           return json({ error: 'invalid_coordinates', message: 'latitude (-90〜90) と longitude (-180〜180) を数値で送信してください。' }, 400);
         }
-        input = { latitude, longitude };
+        if (!['front', 'back'].includes(body.direction)) {
+          return json({ error: 'invalid_direction', message: 'direction は front（往路）または back（復路）を指定してください。' }, 400);
+        }
+        if (body.recordedAt !== undefined && (typeof body.recordedAt !== 'string' || !/T.*(Z|[+-]\d{2}:\d{2})$/.test(body.recordedAt) || !Number.isFinite(Date.parse(body.recordedAt)))) {
+          return json({ error: 'invalid_recorded_at', message: 'recordedAt はタイムゾーン付きISO日時にしてください。' }, 400);
+        }
+        input = { latitude, longitude, direction: body.direction, recordedAt: body.recordedAt };
       } catch {
         return json({ error: 'invalid_json' }, 400);
+      }
+    }
+
+    if (input) {
+      try {
+        const dataset = await loadDataset(env.DB, input.direction);
+        const result = predict(dataset, input);
+        if (!result) return json({ error: 'outside_recorded_route', message: '記録された走行ルートから100m以内に対応位置がありません。', coverage: dataset.coverage }, 422);
+        return json({ ...result, datasetVersion: dataset.version });
+      } catch (error) {
+        console.error('Reference dataset unavailable:', error.message);
+        return json({ error: 'dataset_unavailable', message: 'npm run data:local または data:remote で走行データを登録してください。' }, 503);
       }
     }
 

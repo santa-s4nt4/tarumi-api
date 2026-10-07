@@ -8,7 +8,11 @@
     "db:local": "wrangler d1 migrations apply DB --local",
     "db:remote": "wrangler d1 migrations apply DB --remote",
     "deploy": "wrangler deploy",
-    "check": "wrangler deploy --dry-run"
+    "check": "wrangler deploy --dry-run",
+    "data:build": "node scripts/build-data.mjs",
+    "data:local": "npm run data:build && wrangler d1 execute DB --local --file=generated/routes.sql",
+    "data:remote": "npm run data:build && wrangler d1 execute DB --remote --file=generated/routes.sql",
+    "test": "node --test"
   },
   "devDependencies": {
     "wrangler": "4.139.0"

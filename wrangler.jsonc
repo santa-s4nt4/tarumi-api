@@ -7,8 +7,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "tarumi-demo",
-      // ローカル確認用。公開前に作成したD1のDatabase IDへ置き換える。
+      "database_name": "tarumi-database",
       "database_id": "8edc72f6-2284-458d-9756-ddb32cdede21",
       "migrations_dir": "migrations"
     }
