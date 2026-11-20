@@ -6,6 +6,7 @@
 
 ```sh
 npm ci
+npm run db:local
 npm run data:local
 npm run dev
 ```
@@ -15,14 +16,20 @@ npm run dev
 ```sh
 curl http://localhost:8787/api/position \
   -H 'Content-Type: application/json' \
-  -d '{"latitude":35.514371,"longitude":136.653235,"direction":"front"}'
+  -d '{"latitude":35.487792,"longitude":136.669991,"direction":"front"}'
 ```
 
 - `latitude`, `longitude`: 必須、数値。
 - `direction`: 必須。`front`=往路、`back`=復路。GPS1点から方向を推測しません。
 - `recordedAt`: 任意。GPS取得時刻をタイムゾーン付きISO日時で指定。viewerでの補正用に `prediction.basedAt` へ返します。省略時はnull。古いGPSを送るとその古い位置に対する予測になります。
 
-上記の実データ例では、木知原の停車開始まで約492.3m・46秒、川の符号付き横距離は約-115.3mです（データ更新で変わります）。
+上記の実データ例では、本巣の停車開始まで約2.6m・2秒、川の符号付き横距離は約-7,366mです（データ更新で変わります）。
+
+## LIVE用のGPS
+
+`GET /api/recordings/front` と `GET /api/recordings/back` は、投入した記録のメタデータ、全測位点、予測APIと共通の `datasetVersion` を返します。隣の `tarumi-seq` で `npm run api:sync-local` を実行すると、最新のGPSをこのプロジェクトへコピーし、ローカルD1に登録します。
+
+`POST /api/gps-links` は2時間の連携IDと受信・送信用の別々の鍵を発行します。`/api/gps-links/{id}` に対し、PCは受信鍵でGET、スマホは送信鍵でPUTします。認証には `Authorization: Bearer <key>` を使います。新しい測位が来ると直前の測位を上書きします。どちらかの鍵でDELETEすると連携と測位を削除します。期限切れリンクへのアクセスは失効し、定期処理（15分ごと）が期限切れの行を削除します。
 
 ## 返却値
 
@@ -60,7 +67,7 @@ curl http://localhost:8787/api/position \
 - `position.speedKmh` / `speedMetersPerSecond` は元GPSの `speed` を対応する2点間で補間した記録上の速度です。`speedSource: gps_record_speed`。スマホ自身の現在速度ではありません。
 - トンネルは入口/出口をそれぞれ投影し、進行方向に並べ替えます。トンネル内では前方の出口が `next.tunnel` になります。
 - 川の交差はGPS線と提供の川の線の幾何的な交点です。揺れによる近接交差を30m以内でまとめます。実際の鉄橋の数・位置とは別で、データに基づく候補です。
-- 往路GPSは木知原の手前〜樽見、復路GPSは樽見〜織部付近です。大垣〜本巣などへの予測はできません。反対方向の時刻を流用しません。
+- 往路GPSは本巣〜樽見、復路GPSは樽見を出発後〜本巣です。大垣〜本巣などへの予測はできません。反対方向の時刻を流用しません。
 - 地点の軌跡からのずれが100m超、または軌跡端にしか対応せず端から30m超なら除外します。端付近の地点は端へ近似される場合があります。
 - リクエストのGPSが軌跡から100m超ならHTTP 422。通過済みイベントを前方として返しません。現在地ちょうどのイベントは0mとして含めます。
 - トンネルでGPSが消えた場合の位置推定や5秒間の補間はviewer側で行います。速度差による予測補正・方向自動判定は未実装です。
@@ -81,7 +88,7 @@ npm run data:local   # 再生成してローカルD1へ登録
 npm run data:remote  # 再生成してクラウドD1へ登録
 ```
 
-登録先は専用テーブル `route_dataset_chunks`。既存のデモテーブルは変更しません。同じ方向の参照データを置換するので、繰り返し実行可能です。大きなSQL文を避けるためJSONを分割保存しています。取り込みはイベント稼働前に行ってください。部分的な取り込み・未登録は503になる場合があります。
+登録先は予測用の `route_dataset_chunks` と記録配信用の `gps_recording_chunks`。既存のデモテーブルは変更しません。同じ方向の参照データを置換するので、繰り返し実行可能です。大きなSQL文を避けるためJSONを分割保存しています。取り込みはイベント稼働前に行ってください。部分的な取り込み・未登録は503になる場合があります。
 
 `data:build` は含めた駅・トンネル・交差数と除外IDを表示します。提供CSVの形式（引用符なし）に対応し、形式が変わった場合はエラーで止まります。
 
@@ -94,6 +101,7 @@ npm run data:remote  # 再生成してクラウドD1へ登録
 
 ```sh
 npx wrangler login
+npm run db:remote
 npm run data:remote
 npm run deploy
 ```
@@ -120,9 +128,9 @@ npm run check
 ```
 
 `npm test` は投影・時間補間・東西符号・複数交点・交点なし・重複GPS・トンネル内判定を検証します。
-旧 `GET /api/demo` を使う場合だけ `npm run db:local`（クラウドでは `npm run db:remote`）でダミーテーブルを初期化してください。
+スマホ連携と旧 `GET /api/demo` を使う場合は `npm run db:local`（クラウドでは `npm run db:remote`）でダミーテーブルを初期化してください。
 
 400: 不正な座標/方向/日時/JSON、404: URLなし、405: 未対応メソッド、422: 記録ルート外、503: D1参照データなし・読み込み失敗。
-APIは公開・読み取り専用でGPSをDB保存しません。CORSは全オリジンに許可しています。
+位置予測は読み取り専用です。スマホ連携は、リンクごとに最新の1測位をD1に保存します。CORSは全オリジンに許可しています。
 
 公式資料：[D1の接続](https://developers.cloudflare.com/d1/get-started/)・[Workers Git連携](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)・[D1のサイズ制限](https://developers.cloudflare.com/d1/platform/limits/)
