@@ -17,8 +17,16 @@ export default {
     }
 
     const path = new URL(request.url).pathname;
+    const recording = path.match(/^\/api\/recordings\/(front|back)$/);
+    if (recording && request.method === 'GET') {
+      try {
+        const { results } = await env.DB.prepare('SELECT payload FROM gps_recording_chunks WHERE direction=? ORDER BY part').bind(recording[1]).all();
+        if (results.length) return new Response(results.map(row => row.payload).join(''), { headers: { ...headers, 'Content-Type': 'application/json' } });
+      } catch { /* Data import may still be pending. */ }
+      return json({ error: 'recording_unavailable' }, 503);
+    }
     if (path === '/' && request.method === 'GET') {
-      return json({ name: 'tarumi-api', demo: false, endpoints: ['GET /api/demo', 'POST /api/position'] });
+      return json({ name: 'tarumi-api', demo: false, endpoints: ['GET /api/demo', 'POST /api/position', 'GET /api/recordings/{front|back}'] });
     }
     if (!['/api/demo', '/api/position'].includes(path)) {
       return json({ error: 'not_found' }, 404);
