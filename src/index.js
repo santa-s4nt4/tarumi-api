@@ -1,8 +1,9 @@
 import { loadDataset, predict } from './predict.js';
+import { gpsLink } from './gps-links.js';
 const headers = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Cache-Control': 'no-store',
 };
 
@@ -11,12 +12,19 @@ function json(data, status = 200) {
 }
 
 export default {
+  async scheduled(_event, env) {
+    await env.DB.prepare('DELETE FROM gps_links WHERE expires_at<=?').bind(Date.now()).run();
+  },
   async fetch(request, env) {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers });
     }
 
     const path = new URL(request.url).pathname;
+    if (path === '/api/gps-links' || path.startsWith('/api/gps-links/')) {
+      try { return await gpsLink(request, env.DB, path, json); }
+      catch { return json({ error: 'gps_relay_unavailable' }, 503); }
+    }
     const recording = path.match(/^\/api\/recordings\/(front|back)$/);
     if (recording && request.method === 'GET') {
       try {
@@ -26,7 +34,7 @@ export default {
       return json({ error: 'recording_unavailable' }, 503);
     }
     if (path === '/' && request.method === 'GET') {
-      return json({ name: 'tarumi-api', demo: false, endpoints: ['GET /api/demo', 'POST /api/position', 'GET /api/recordings/{front|back}'] });
+      return json({ name: 'tarumi-api', demo: false, endpoints: ['GET /api/demo', 'POST /api/position', 'GET /api/recordings/{front|back}', 'POST /api/gps-links'] });
     }
     if (!['/api/demo', '/api/position'].includes(path)) {
       return json({ error: 'not_found' }, 404);
