@@ -2,7 +2,7 @@ import { loadDataset, predict } from './predict.js';
 import { gpsLink } from './gps-links.js';
 const headers = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Cache-Control': 'no-store',
 };
@@ -61,7 +61,10 @@ export default {
         if (body.recordedAt !== undefined && (typeof body.recordedAt !== 'string' || !/T.*(Z|[+-]\d{2}:\d{2})$/.test(body.recordedAt) || !Number.isFinite(Date.parse(body.recordedAt)))) {
           return json({ error: 'invalid_recorded_at', message: 'recordedAt はタイムゾーン付きISO日時にしてください。' }, 400);
         }
-        input = { latitude, longitude, direction: body.direction, recordedAt: body.recordedAt };
+        if (body.datasetVersion !== undefined && (typeof body.datasetVersion !== 'string' || !/^[a-f0-9]{16}$/.test(body.datasetVersion))) {
+          return json({ error: 'invalid_dataset_version', message: 'datasetVersion は参照データの16桁のハッシュを指定してください。' }, 400);
+        }
+        input = { latitude, longitude, direction: body.direction, recordedAt: body.recordedAt, datasetVersion: body.datasetVersion };
       } catch {
         return json({ error: 'invalid_json' }, 400);
       }
@@ -70,6 +73,10 @@ export default {
     if (input) {
       try {
         const dataset = await loadDataset(env.DB, input.direction);
+        if (input.datasetVersion && input.datasetVersion !== dataset.version) {
+          return json({ error: 'dataset_version_mismatch', message: 'GPS記録とAPIの参照データのバージョンが一致しません。APIのデータを更新して再接続してください。',
+            datasetVersion: dataset.version, requestedDatasetVersion: input.datasetVersion }, 409);
+        }
         const result = predict(dataset, input);
         if (!result) return json({ error: 'outside_recorded_route', message: '記録された走行ルートから100m以内に対応位置がありません。', coverage: dataset.coverage }, 422);
         return json({ ...result, datasetVersion: dataset.version });

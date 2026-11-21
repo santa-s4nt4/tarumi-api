@@ -6,10 +6,10 @@
 
 ```sh
 npm ci
-npm run db:local
-npm run data:local
 npm run dev
 ```
+
+`npm run dev` は起動前にローカルD1のマイグレーションとGPS参照データの再登録を実行します。pull後も古いDBの走行区間を参照し続けることを防ぎます。クラウドD1は変更しません。
 
 別ターミナルで：
 
@@ -22,14 +22,21 @@ curl http://localhost:8787/api/position \
 - `latitude`, `longitude`: 必須、数値。
 - `direction`: 必須。`front`=往路、`back`=復路。GPS1点から方向を推測しません。
 - `recordedAt`: 任意。GPS取得時刻をタイムゾーン付きISO日時で指定。viewerでの補正用に `prediction.basedAt` へ返します。省略時はnull。古いGPSを送るとその古い位置に対する予測になります。
+- `datasetVersion`: 任意。画面で使用する参照データの16桁ハッシュ。API側と異なる場合は、位置の照合前にHTTP 409 `dataset_version_mismatch` を返します。GPS記録とDBの世代違いをルート外の422と区別できます。
 
 上記の実データ例では、本巣の停車開始まで約2.6m・2秒、川の符号付き横距離は約-7,366mです（データ更新で変わります）。
 
-## LIVE用のGPS
+## 開発用PERFORMANCEのGPS連携
 
 `GET /api/recordings/front` と `GET /api/recordings/back` は、投入した記録のメタデータ、全測位点、予測APIと共通の `datasetVersion` を返します。隣の `tarumi-seq` で `npm run api:sync-local` を実行すると、最新のGPSをこのプロジェクトへコピーし、ローカルD1に登録します。
 
 `POST /api/gps-links` は2時間の連携IDと受信・送信用の別々の鍵を発行します。`/api/gps-links/{id}` に対し、PCは受信鍵でGET、スマホは送信鍵でPUTします。認証には `Authorization: Bearer <key>` を使います。新しい測位が来ると直前の測位を上書きします。どちらかの鍵でDELETEすると連携と測位を削除します。期限切れリンクへのアクセスは失効し、定期処理（15分ごと）が期限切れの行を削除します。
+
+`POST /api/gps-links/{id}/join` は送信鍵でQR読み取りを通知し、GPS取得は開始しません。GETの `joinedAt` を見てPC側のQRモーダルを閉じます。
+
+`PATCH /api/gps-links/{id}` は受信鍵で `{ "trainId": "23", "date": "2026-11-21", "delay": 0, "mode": "auto" }` を保存します。`delay` は0〜86400の整数秒、`mode` は `auto` / `normal` / `bird`。GETは `position`、`joinedAt`、`view`、`expiresAt` を返し、同じ受信鍵のiPadは列車・遅延・視点を表示できます。送信鍵はiPadには渡しません。受信鍵は従来の終了操作に加えて共有状態も更新できるため、閲覧リンクは同じ利用者の端末で共有してください。
+
+追加列は `0003_performance_view.sql` で管理します。ローカルでは `npm run dev` が適用します。リモートDBへ適用・デプロイする場合は、先に同マイグレーションを適用してください。今回のフロントエンドでは公開版にPERFORMANCE・GPS送信画面を出力しません。
 
 ## 返却値
 
@@ -128,9 +135,9 @@ npm run check
 ```
 
 `npm test` は投影・時間補間・東西符号・複数交点・交点なし・重複GPS・トンネル内判定を検証します。
-スマホ連携と旧 `GET /api/demo` を使う場合は `npm run db:local`（クラウドでは `npm run db:remote`）でダミーテーブルを初期化してください。
+`npm run dev` の起動時にスマホ連携と旧 `GET /api/demo` のローカルテーブルも初期化します。クラウドでは `npm run db:remote` が必要です。
 
-400: 不正な座標/方向/日時/JSON、404: URLなし、405: 未対応メソッド、422: 記録ルート外、503: D1参照データなし・読み込み失敗。
+400: 不正な座標/方向/日時/バージョン/JSON、404: URLなし、405: 未対応メソッド、409: GPS記録とAPIのデータ不一致、422: 記録ルート外、503: D1参照データなし・読み込み失敗。
 位置予測は読み取り専用です。スマホ連携は、リンクごとに最新の1測位をD1に保存します。CORSは全オリジンに許可しています。
 
 公式資料：[D1の接続](https://developers.cloudflare.com/d1/get-started/)・[Workers Git連携](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)・[D1のサイズ制限](https://developers.cloudflare.com/d1/platform/limits/)

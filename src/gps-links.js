@@ -16,25 +16,41 @@ export async function gpsLink(request, db, path, json) {
     ]);
     return json({ id, reader, writer, expiresAt }, 201);
   }
-  const id = path.match(/^\/api\/gps-links\/([a-f0-9-]{36})$/)?.[1];
+  const match = path.match(/^\/api\/gps-links\/([a-f0-9-]{36})(\/join)?$/);
+  const id = match?.[1];
   const token = request.headers.get('Authorization')?.match(/^Bearer ([a-f0-9]{64})$/)?.[1];
   const missing = () => json({ error: 'link_unavailable' }, 404);
   if (!id || !token) return missing();
   const key = await digest(token);
+  if (match[2]) {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+    const result = await db.prepare('UPDATE gps_links SET joined_at=? WHERE id=? AND writer=? AND expires_at>?').bind(now, id, key, now).run();
+    return result.meta.changes ? json({ joined: true }) : missing();
+  }
   if (request.method === 'HEAD') {
     const row = await db.prepare('SELECT 1 FROM gps_links WHERE id=? AND writer=? AND expires_at>?').bind(id, key, now).first();
     const { headers } = json(null);
     return new Response(null, { status: row ? 200 : 404, headers });
   }
   if (request.method === 'GET') {
-    const row = await db.prepare('SELECT fix, expires_at FROM gps_links WHERE id=? AND reader=? AND expires_at>?')
+    const row = await db.prepare('SELECT fix, expires_at, joined_at, view FROM gps_links WHERE id=? AND reader=? AND expires_at>?')
       .bind(id, key, now).first();
-    return row ? json({ position: JSON.parse(row.fix), expiresAt: row.expires_at }) : missing();
+    return row ? json({ position: JSON.parse(row.fix), expiresAt: row.expires_at, joinedAt: row.joined_at, view: JSON.parse(row.view) }) : missing();
   }
   if (request.method === 'DELETE') {
     const result = await db.prepare('DELETE FROM gps_links WHERE id=? AND (reader=? OR writer=?)')
       .bind(id, key, key).run();
     return result.meta.changes ? json({ closed: true }) : missing();
+  }
+  if (request.method === 'PATCH') {
+    let value;
+    try { value = await request.json(); } catch { return json({ error: 'invalid_json' }, 400); }
+    const { trainId, date, delay, mode } = value ?? {};
+    if ((trainId !== null && (typeof trainId !== 'string' || !/^\d{1,5}$/.test(trainId))) || typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+        !Number.isInteger(delay) || delay < 0 || delay > 86400 || !['auto', 'normal', 'bird'].includes(mode)) return json({ error: 'invalid_view' }, 400);
+    const result = await db.prepare('UPDATE gps_links SET view=? WHERE id=? AND reader=? AND expires_at>?')
+      .bind(JSON.stringify({ trainId, date, delay, mode }), id, key, now).run();
+    return result.meta.changes ? json({ saved: true }) : missing();
   }
   if (request.method !== 'PUT') return json({ error: 'method_not_allowed' }, 405);
   let input;
